@@ -18,6 +18,7 @@ type SpotifyPlayerInstance = {
   togglePlay: () => Promise<void>;
   pause: () => Promise<void>;
   resume: () => Promise<void>;
+  seek: (positionMs: number) => Promise<void>;
 };
 
 declare global {
@@ -69,6 +70,7 @@ export function usePlaybackSdk() {
   const [ready, setReady] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [position, setPosition] = useState(0);
+  const [duration, setDuration] = useState(0);
   const [paused, setPaused] = useState(true);
   const [currentTrackUri, setCurrentTrackUri] = useState<string | null>(null);
 
@@ -98,6 +100,7 @@ export function usePlaybackSdk() {
           const state = arg as SpotifyPlayerState | null;
           if (!state || cancelled) return;
           setPosition(state.position);
+          setDuration(state.duration);
           setPaused(state.paused);
           setCurrentTrackUri(state.track_window.current_track.uri);
         });
@@ -142,5 +145,11 @@ export function usePlaybackSdk() {
     await playerRef.current?.togglePlay();
   }
 
-  return { ready, deviceId, error, position, paused, currentTrackUri, playUri, togglePlay };
+  async function seek(positionMs: number) {
+    await playerRef.current?.seek(positionMs);
+    // Reflect immediately — player_state_changed can lag a moment behind a seek.
+    setPosition(positionMs);
+  }
+
+  return { ready, deviceId, error, position, duration, paused, currentTrackUri, playUri, togglePlay, seek };
 }

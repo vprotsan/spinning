@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { usePlaybackSdk } from "@/lib/usePlaybackSdk";
+import Scrubber from "@/components/Scrubber";
 import { apiFetch } from "@/lib/api-client";
 import { formatDuration } from "@/lib/types";
 import type { ApiNote, ApiSong } from "@/lib/types";
@@ -20,12 +21,15 @@ export default function NoteEditor({
   onClose: () => void;
   onNotesChanged: (notes: ApiNote[]) => void;
 }) {
-  const { ready, deviceId, error, position, paused, currentTrackUri, playUri, togglePlay } = usePlaybackSdk();
+  const { ready, deviceId, error, position, duration, paused, currentTrackUri, playUri, togglePlay, seek } =
+    usePlaybackSdk();
   const [notes, setNotes] = useState<ApiNote[]>(song.notes);
   const [pendingStart, setPendingStart] = useState<number | null>(null);
   const [noteText, setNoteText] = useState("");
   const [saveError, setSaveError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
+  const [editingNoteId, setEditingNoteId] = useState<string | null>(null);
+  const [dragPosition, setDragPosition] = useState<number | null>(null);
 
   const isThisTrackLoaded = currentTrackUri === song.spotifyUri;
 
@@ -52,13 +56,24 @@ export default function NoteEditor({
     setSaving(true);
     setSaveError(null);
     try {
-      const { note } = await apiFetch<{ note: ApiNote }>(`/api/songs/${song.id}/notes`, {
-        method: "POST",
-        body: JSON.stringify({ startMs, endMs, note: noteText.trim() || undefined }),
-      });
-      const updated = [...notes, note].sort((a, b) => a.startMs - b.startMs);
-      setNotes(updated);
-      onNotesChanged(updated);
+      if (editingNoteId) {
+        const { note } = await apiFetch<{ note: ApiNote }>(`/api/songs/${song.id}/notes/${editingNoteId}`, {
+          method: "PATCH",
+          body: JSON.stringify({ startMs, endMs, note: noteText.trim() || null }),
+        });
+        const updated = notes.map((n) => (n.id === note.id ? note : n)).sort((a, b) => a.startMs - b.startMs);
+        setNotes(updated);
+        onNotesChanged(updated);
+        setEditingNoteId(null);
+      } else {
+        const { note } = await apiFetch<{ note: ApiNote }>(`/api/songs/${song.id}/notes`, {
+          method: "POST",
+          body: JSON.stringify({ startMs, endMs, note: noteText.trim() || undefined }),
+        });
+        const updated = [...notes, note].sort((a, b) => a.startMs - b.startMs);
+        setNotes(updated);
+        onNotesChanged(updated);
+      }
       setNoteText("");
     } catch (e) {
       setSaveError(e instanceof Error ? e.message : "Failed to save note");
@@ -68,11 +83,27 @@ export default function NoteEditor({
     }
   }
 
+  function handleEdit(n: ApiNote) {
+    setEditingNoteId(n.id);
+    setPendingStart(n.startMs);
+    setNoteText(n.note ?? "");
+    setSaveError(null);
+    if (deviceId) seek(n.startMs);
+  }
+
+  function handleCancelEdit() {
+    setEditingNoteId(null);
+    setPendingStart(null);
+    setNoteText("");
+    setSaveError(null);
+  }
+
   async function handleDelete(noteId: string) {
     await apiFetch(`/api/songs/${song.id}/notes/${noteId}`, { method: "DELETE" });
     const updated = notes.filter((n) => n.id !== noteId);
     setNotes(updated);
     onNotesChanged(updated);
+    if (editingNoteId === noteId) handleCancelEdit();
   }
 
   return (
@@ -103,7 +134,10 @@ export default function NoteEditor({
 
         <div className="rounded-2xl border border-neutral-800 bg-neutral-900 p-4 space-y-4">
           <div className="flex items-center justify-between">
-            <span className="text-2xl font-mono tabular-nums">{formatDuration(position)}</span>
+            <span className="text-2xl font-mono tabular-nums">
+              {formatDuration(dragPosition ?? position)}
+              <span className="text-base text-neutral-500"> / {formatDuration(duration)}</span>
+            </span>
             <button
               onClick={togglePlay}
               disabled={!deviceId || !isThisTrackLoaded}
@@ -112,6 +146,27 @@ export default function NoteEditor({
               {paused ? "▶ Play" : "⏸ Pause"}
             </button>
           </div>
+
+          <Scrubber
+            position={position}
+            duration={duration}
+            disabled={!deviceId || !isThisTrackLoaded}
+            onSeek={(ms) => {
+              seek(ms);
+              setDragPosition(null);
+            }}
+            onDrag={setDragPosition}
+          />
+
+          {editingNoteId && (
+            <p className="text-center text-sm text-amber-400">
+              Editing note — seek to a new spot and tap Mark Start and/or Mark End, then{" "}
+              <button onClick={handleCancelEdit} className="underline">
+                cancel
+              </button>
+              .
+            </p>
+          )}
 
           <input
             value={noteText}
@@ -126,19 +181,20 @@ export default function NoteEditor({
               disabled={!deviceId || saving}
               className="rounded-2xl bg-sky-600 py-6 text-lg font-bold active:scale-95 transition disabled:opacity-40"
             >
-              Mark Start
+              {editingNoteId ? "Update Start" : "Mark Start"}
             </button>
             <button
               onClick={handleMarkEnd}
               disabled={!deviceId || pendingStart === null || saving}
               className="rounded-2xl bg-rose-600 py-6 text-lg font-bold active:scale-95 transition disabled:opacity-40"
             >
-              Mark End
+              {editingNoteId ? "Update End" : "Mark End"}
             </button>
           </div>
           {pendingStart !== null && (
             <p className="text-center text-sm text-sky-400">
-              Start marked at {formatDuration(pendingStart)} — tap Mark End when the action ends.
+              Start marked at {formatDuration(pendingStart)} — tap {editingNoteId ? "Update End" : "Mark End"} when
+              the action ends.
             </p>
           )}
           {saveError && <p className="text-center text-sm text-red-400">{saveError}</p>}
@@ -155,7 +211,11 @@ export default function NoteEditor({
             {notes.map((n) => (
               <li
                 key={n.id}
-                className="flex items-center justify-between rounded-xl border border-neutral-800 bg-neutral-900 px-3 py-3"
+                className={`flex items-center justify-between rounded-xl border px-3 py-3 ${
+                  editingNoteId === n.id
+                    ? "border-amber-500 bg-amber-950/20"
+                    : "border-neutral-800 bg-neutral-900"
+                }`}
               >
                 <div>
                   <p className="font-mono text-sm">
@@ -163,12 +223,21 @@ export default function NoteEditor({
                   </p>
                   {n.note && <p className="text-sm text-neutral-400">{n.note}</p>}
                 </div>
-                <button
-                  onClick={() => handleDelete(n.id)}
-                  className="rounded-full bg-neutral-800 px-3 py-2 text-xs text-neutral-300"
-                >
-                  Remove
-                </button>
+                <div className="flex shrink-0 gap-2">
+                  <button
+                    onClick={() => handleEdit(n)}
+                    disabled={!deviceId || saving}
+                    className="rounded-full bg-neutral-800 px-3 py-2 text-xs text-neutral-300 disabled:opacity-40"
+                  >
+                    Edit
+                  </button>
+                  <button
+                    onClick={() => handleDelete(n.id)}
+                    className="rounded-full bg-neutral-800 px-3 py-2 text-xs text-neutral-300"
+                  >
+                    Remove
+                  </button>
+                </div>
               </li>
             ))}
           </ul>
