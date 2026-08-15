@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import SongRow from "@/components/SongRow";
 import SongDetailSheet from "@/components/SongDetailSheet";
 import { apiFetch } from "@/lib/api-client";
+import { usePlaybackSdk } from "@/lib/usePlaybackSdk";
 import type { ApiSong, SpotifyTrackResult } from "@/lib/types";
 
 type Tab = "search" | "library";
@@ -12,12 +13,23 @@ export default function SearchClient() {
   const [tab, setTab] = useState<Tab>("search");
   const [query, setQuery] = useState("");
   const [results, setResults] = useState<SpotifyTrackResult[]>([]);
+  const [searchOffset, setSearchOffset] = useState(0);
+  const [searchHasMore, setSearchHasMore] = useState(false);
   const [libraryTracks, setLibraryTracks] = useState<SpotifyTrackResult[]>([]);
   const [libraryOffset, setLibraryOffset] = useState(0);
   const [libraryHasMore, setLibraryHasMore] = useState(true);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [selected, setSelected] = useState<ApiSong | null>(null);
+  const { deviceId, paused, currentTrackUri, playUri, togglePlay } = usePlaybackSdk();
+
+  function togglePreview(track: SpotifyTrackResult) {
+    if (currentTrackUri === track.spotifyUri) {
+      togglePlay();
+    } else {
+      playUri(track.spotifyUri);
+    }
+  }
 
   useEffect(() => {
     if (tab === "library" && libraryTracks.length === 0) {
@@ -29,13 +41,19 @@ export default function SearchClient() {
   async function handleSearch(e: React.FormEvent) {
     e.preventDefault();
     if (!query.trim()) return;
+    await runSearch(query.trim(), 0);
+  }
+
+  async function runSearch(q: string, offset: number) {
     setLoading(true);
     setError(null);
     try {
-      const { tracks } = await apiFetch<{ tracks: SpotifyTrackResult[] }>(
-        `/api/songs/search?q=${encodeURIComponent(query.trim())}`
+      const data = await apiFetch<{ tracks: SpotifyTrackResult[]; hasMore: boolean }>(
+        `/api/songs/search?q=${encodeURIComponent(q)}&offset=${offset}`
       );
-      setResults(tracks);
+      setResults((prev) => (offset === 0 ? data.tracks : [...prev, ...data.tracks]));
+      setSearchOffset(offset + data.tracks.length);
+      setSearchHasMore(data.hasMore);
     } catch (e) {
       setError(e instanceof Error ? e.message : "Search failed");
     } finally {
@@ -118,9 +136,22 @@ export default function SearchClient() {
             artist={track.artist}
             durationMs={track.durationMs}
             onClick={() => openTrack(track)}
+            albumImageUrl={track.albumImageUrl}
+            isPlaying={!paused && currentTrackUri === track.spotifyUri}
+            onTogglePreview={deviceId ? () => togglePreview(track) : undefined}
           />
         ))}
       </div>
+
+      {tab === "search" && searchHasMore && results.length > 0 && (
+        <button
+          onClick={() => runSearch(query.trim(), searchOffset)}
+          disabled={loading}
+          className="w-full rounded-lg border border-neutral-800 py-2 text-sm text-neutral-400"
+        >
+          {loading ? "Loading…" : "Load more"}
+        </button>
+      )}
 
       {tab === "library" && libraryHasMore && libraryTracks.length > 0 && (
         <button

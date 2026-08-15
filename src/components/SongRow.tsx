@@ -12,6 +12,9 @@ export default function SongRow({
   noteCount,
   onClick,
   trailing,
+  albumImageUrl,
+  isPlaying,
+  onTogglePreview,
 }: {
   title: string;
   artist: string;
@@ -20,6 +23,9 @@ export default function SongRow({
   noteCount?: number;
   onClick?: () => void;
   trailing?: React.ReactNode;
+  albumImageUrl?: string | null;
+  isPlaying?: boolean;
+  onTogglePreview?: () => void;
 }) {
   return (
     <div
@@ -28,6 +34,26 @@ export default function SongRow({
         onClick ? "active:bg-neutral-800 cursor-pointer" : ""
       }`}
     >
+      {albumImageUrl !== undefined && (
+        <div className="relative h-12 w-12 shrink-0 overflow-hidden rounded-lg bg-neutral-800">
+          {albumImageUrl && (
+            // eslint-disable-next-line @next/next/no-img-element
+            <img src={albumImageUrl} alt="" className="h-full w-full object-cover" />
+          )}
+          {onTogglePreview && (
+            <button
+              onClick={(e) => {
+                e.stopPropagation();
+                onTogglePreview();
+              }}
+              aria-label={isPlaying ? "Pause preview" : "Play preview"}
+              className="absolute inset-0 flex items-center justify-center bg-black/40 text-white"
+            >
+              {isPlaying ? "⏸" : "▶"}
+            </button>
+          )}
+        </div>
+      )}
       <div className="min-w-0 flex-1">
         <p className="truncate font-medium">{title}</p>
         <p className="truncate text-sm text-neutral-400">{artist}</p>

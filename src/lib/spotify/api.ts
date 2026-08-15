@@ -72,17 +72,28 @@ function normalizeTrack(t: SpotifyTrack): NormalizedTrack {
   };
 }
 
-export async function searchTracks(userId: string, query: string) {
+// Page size for search results. Needs to be an explicit, stable value for offset-based
+// pagination to work — but Spotify's `limit` param is validated inconsistently (accounts/apps
+// vary; 11+ triggers "Invalid limit" here), so keep this at the largest value confirmed to work.
+const SEARCH_PAGE_SIZE = 10;
+
+export async function searchTracks(userId: string, query: string, offset = 0) {
   // Strip characters that trigger Spotify's 400 "Invalid html" validation (can happen
   // with iOS autocomplete or smart-quote substitution).
   const q = query.replace(/[<>&"']/g, " ").replace(/\s+/g, " ").trim();
-  // Omit `limit` — an explicit value (even a modest one) can trigger Spotify's
-  // "Invalid limit" validation depending on the app/account; let Spotify use its own default.
-  const params = new URLSearchParams({ q, type: "track" });
+  const params = new URLSearchParams({
+    q,
+    type: "track",
+    limit: String(SEARCH_PAGE_SIZE),
+    offset: String(offset),
+  });
   const res = await spotifyFetch(userId, `/search?${params.toString()}`);
   if (!res.ok) throw new Error(`Spotify search failed: ${res.status} ${await res.text()}`);
   const data = await res.json();
-  return (data.tracks?.items ?? []).map(normalizeTrack) as NormalizedTrack[];
+  return {
+    tracks: (data.tracks?.items ?? []).map(normalizeTrack) as NormalizedTrack[],
+    hasMore: Boolean(data.tracks?.next),
+  };
 }
 
 export async function getSavedTracks(userId: string, offset = 0, limit = 30) {
@@ -105,7 +116,9 @@ export async function saveSpotifyPlaylist(
   let playlistId = opts.spotifyPlaylistId;
 
   if (!playlistId) {
-    const createRes = await spotifyFetch(userId, `/users/${userId}/playlists`, {
+    // Spotify's Feb 2026 Web API migration removed /users/{user_id}/playlists for
+    // Development Mode apps (403) — /me/playlists is the replacement.
+    const createRes = await spotifyFetch(userId, `/me/playlists`, {
       method: "POST",
       body: JSON.stringify({ name: opts.name, public: false }),
     });
@@ -131,8 +144,10 @@ export async function saveSpotifyPlaylist(
     chunks.push(opts.trackUris.slice(i, i + 100));
   }
 
+  // /playlists/{id}/tracks is deprecated (403 for Development Mode apps since the
+  // Feb 2026 migration) — /playlists/{id}/items is the replacement, same semantics.
   const firstChunk = chunks.shift() ?? [];
-  const replaceRes = await spotifyFetch(userId, `/playlists/${playlistId}/tracks`, {
+  const replaceRes = await spotifyFetch(userId, `/playlists/${playlistId}/items`, {
     method: "PUT",
     body: JSON.stringify({ uris: firstChunk }),
   });
@@ -141,7 +156,7 @@ export async function saveSpotifyPlaylist(
   }
 
   for (const chunk of chunks) {
-    const addRes = await spotifyFetch(userId, `/playlists/${playlistId}/tracks`, {
+    const addRes = await spotifyFetch(userId, `/playlists/${playlistId}/items`, {
       method: "POST",
       body: JSON.stringify({ uris: chunk }),
     });

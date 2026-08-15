@@ -9,10 +9,11 @@ export async function GET(request: NextRequest) {
 
   const q = request.nextUrl.searchParams.get("q")?.trim();
   if (!q) return badRequest("q is required");
+  const offset = Number(request.nextUrl.searchParams.get("offset")) || 0;
 
   try {
-    const tracks = await searchTracks(userId, q);
-    return NextResponse.json({ tracks });
+    const { tracks, hasMore } = await searchTracks(userId, q, offset);
+    return NextResponse.json({ tracks, hasMore });
   } catch (err) {
     console.error("Spotify search failed", err);
     const message = err instanceof Error ? err.message : "Spotify search failed";

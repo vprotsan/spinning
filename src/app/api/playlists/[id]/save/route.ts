@@ -43,6 +43,7 @@ export async function POST(_request: NextRequest, ctx: RouteContext<"/api/playli
     return NextResponse.json({ spotifyPlaylistId });
   } catch (err) {
     console.error("Failed to save playlist to Spotify", err);
-    return NextResponse.json({ error: "Failed to save playlist to Spotify" }, { status: 502 });
+    const message = err instanceof Error ? err.message : "Failed to save playlist to Spotify";
+    return NextResponse.json({ error: message }, { status: 502 });
   }
 }
