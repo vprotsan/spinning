@@ -52,6 +52,15 @@ export type SpotifyTrackResult = {
   albumImageUrl: string | null;
 };
 
+export type SpotifyPlaylistResult = {
+  id: string;
+  name: string;
+  ownerName: string;
+  trackCount: number;
+  imageUrl: string | null;
+  externalUrl: string | null;
+};
+
 export function formatDuration(ms: number): string {
   const totalSeconds = Math.round(ms / 1000);
   const minutes = Math.floor(totalSeconds / 60);
