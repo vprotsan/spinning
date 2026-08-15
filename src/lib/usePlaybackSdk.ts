@@ -59,6 +59,32 @@ async function fetchPlayerToken(): Promise<string> {
   return data.accessToken;
 }
 
+async function transferPlayback(deviceId: string, token: string): Promise<void> {
+  await fetch("https://api.spotify.com/v1/me/player", {
+    method: "PUT",
+    headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+    body: JSON.stringify({ device_ids: [deviceId], play: false }),
+  });
+}
+
+/**
+ * Poll /me/player/devices until our device ID appears (max ~5s). Spotify's
+ * REST API lags behind the SDK's own "ready" event by a few seconds, which
+ * otherwise shows up as a spurious 404 on the first play call.
+ */
+async function waitForDevice(deviceId: string, token: string): Promise<boolean> {
+  for (let attempt = 0; attempt < 10; attempt++) {
+    await new Promise((r) => setTimeout(r, 500));
+    const res = await fetch("https://api.spotify.com/v1/me/player/devices", {
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    if (!res.ok) continue;
+    const { devices } = (await res.json()) as { devices: { id: string }[] };
+    if (devices.some((d) => d.id === deviceId)) return true;
+  }
+  return false;
+}
+
 /**
  * Connects to the Spotify Web Playback SDK (Premium required — Section 3.2 /
  * 5.2) and exposes enough control to play a track and read the live playhead
@@ -88,7 +114,14 @@ export function usePlaybackSdk() {
 
         player.addListener("ready", (arg) => {
           const { device_id } = arg as { device_id: string };
-          if (!cancelled) setDeviceId(device_id);
+          if (cancelled) return;
+          setDeviceId(device_id);
+          // Best-effort — proactively transferring reduces "device not found" 404s
+          // on the first play call. playUri retries via transfer+wait anyway if this
+          // hasn't landed on Spotify's backend yet.
+          fetchPlayerToken()
+            .then((token) => transferPlayback(device_id, token))
+            .catch(() => {});
         });
         player.addListener("not_ready", () => {
           if (!cancelled) setDeviceId(null);
@@ -133,12 +166,32 @@ export function usePlaybackSdk() {
   async function playUri(uri: string) {
     if (!deviceId) return;
     setError(null);
+    const token = await fetchPlayerToken();
     const res = await fetch(`https://api.spotify.com/v1/me/player/play?device_id=${deviceId}`, {
       method: "PUT",
-      headers: { Authorization: `Bearer ${await fetchPlayerToken()}`, "Content-Type": "application/json" },
+      headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
       body: JSON.stringify({ uris: [uri] }),
     });
-    if (!res.ok && res.status !== 204) setError("Could not start playback");
+    if (res.ok || res.status === 204) return;
+
+    if (res.status === 404) {
+      // Device not yet registered on Spotify's backend — re-transfer and retry once.
+      await transferPlayback(deviceId, token);
+      const found = await waitForDevice(deviceId, token);
+      if (!found) {
+        setError("Could not start playback");
+        return;
+      }
+      const retryRes = await fetch(`https://api.spotify.com/v1/me/player/play?device_id=${deviceId}`, {
+        method: "PUT",
+        headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+        body: JSON.stringify({ uris: [uri] }),
+      });
+      if (!retryRes.ok && retryRes.status !== 204) setError("Could not start playback");
+      return;
+    }
+
+    setError("Could not start playback");
   }
 
   async function togglePlay() {

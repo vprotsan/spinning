@@ -3,6 +3,8 @@
 import { useRef, useState } from "react";
 import { formatDuration } from "@/lib/types";
 
+export type ScrubberSegment = { startMs: number; endMs: number };
+
 /** Draggable playback timeline — press and drag the handle to seek within the track. */
 export default function Scrubber({
   position,
@@ -10,6 +12,7 @@ export default function Scrubber({
   disabled,
   onSeek,
   onDrag,
+  segments,
 }: {
   position: number;
   duration: number;
@@ -17,6 +20,8 @@ export default function Scrubber({
   onSeek: (positionMs: number) => void;
   /** Fires continuously while dragging, before the seek is committed on release. */
   onDrag?: (positionMs: number) => void;
+  /** Optional note spans to highlight on the track (e.g. a playlist track's notes). */
+  segments?: ScrubberSegment[];
 }) {
   const trackRef = useRef<HTMLDivElement>(null);
   const [dragPosition, setDragPosition] = useState<number | null>(null);
@@ -63,7 +68,24 @@ export default function Scrubber({
       className={`relative h-8 touch-none ${disabled ? "opacity-40" : "cursor-pointer"}`}
     >
       <div className="absolute left-0 right-0 top-1/2 h-1.5 -translate-y-1/2 overflow-hidden rounded-full bg-neutral-800">
-        <div className="h-full rounded-full bg-emerald-500" style={{ width: `${pct * 100}%` }} />
+        {segments ? (
+          <>
+            {segments.map((seg, i) => (
+              <div
+                key={i}
+                className="absolute h-full bg-amber-500"
+                style={{
+                  left: `${(seg.startMs / duration) * 100}%`,
+                  width: `${((seg.endMs - seg.startMs) / duration) * 100}%`,
+                }}
+              />
+            ))}
+            {/* Dim everything right of the playhead so upcoming notes are still visible but muted. */}
+            <div className="absolute right-0 top-0 h-full bg-black/55" style={{ left: `${pct * 100}%` }} />
+          </>
+        ) : (
+          <div className="h-full rounded-full bg-emerald-500" style={{ width: `${pct * 100}%` }} />
+        )}
       </div>
       <div
         className="absolute top-1/2 h-5 w-5 -translate-x-1/2 -translate-y-1/2 rounded-full bg-emerald-400 shadow"

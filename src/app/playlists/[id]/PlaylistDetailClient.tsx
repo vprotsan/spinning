@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import SortablePlaylistSongs from "@/components/SortablePlaylistSongs";
 import AddSongsToPlaylistSheet from "@/components/AddSongsToPlaylistSheet";
 import SongDetailSheet from "@/components/SongDetailSheet";
+import PlaylistPlayerBar from "@/components/PlaylistPlayerBar";
 import { apiFetch } from "@/lib/api-client";
 import { formatPlaylistDuration } from "@/lib/types";
 import type { ApiPlaylistDetail, ApiPlaylistSong, ApiSong } from "@/lib/types";
@@ -121,7 +122,7 @@ export default function PlaylistDetailClient({ playlistId }: { playlistId: strin
   if (!playlist) return <p className="px-4 py-4 text-sm text-neutral-500">Loading…</p>;
 
   return (
-    <div className="px-4 py-4 space-y-4">
+    <div className={`px-4 py-4 space-y-4 ${playlist.songs.length > 0 ? "pb-72" : ""}`}>
       <div className="space-y-2">
         {editingName ? (
           <div className="flex gap-2">
@@ -238,6 +239,8 @@ export default function PlaylistDetailClient({ playlistId }: { playlistId: strin
           onRemovedFromMySongs={handleRemovedFromMySongs}
         />
       )}
+
+      {playlist.songs.length > 0 && <PlaylistPlayerBar songs={playlist.songs} />}
     </div>
   );
 }

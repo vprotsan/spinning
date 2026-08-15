@@ -25,10 +25,11 @@ export default function NoteEditor({
     usePlaybackSdk();
   const [notes, setNotes] = useState<ApiNote[]>(song.notes);
   const [pendingStart, setPendingStart] = useState<number | null>(null);
+  const [pendingEnd, setPendingEnd] = useState<number | null>(null);
   const [noteText, setNoteText] = useState("");
   const [saveError, setSaveError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
-  const [editingNoteId, setEditingNoteId] = useState<string | null>(null);
+  const [editingNote, setEditingNote] = useState<ApiNote | null>(null);
   const [dragPosition, setDragPosition] = useState<number | null>(null);
 
   const isThisTrackLoaded = currentTrackUri === song.spotifyUri;
@@ -40,11 +41,18 @@ export default function NoteEditor({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [ready, deviceId]);
 
-  async function handleMarkStart() {
+  function handleMarkStart() {
     setPendingStart(position);
   }
 
   async function handleMarkEnd() {
+    if (editingNote) {
+      // Editing an existing note — just mark the new end locally; saving happens
+      // via the separate Update button so start/end/text can be reviewed together.
+      setPendingEnd(position);
+      return;
+    }
+
     if (pendingStart === null) return;
     const startMs = Math.min(pendingStart, position);
     const endMs = Math.max(pendingStart, position);
@@ -56,24 +64,13 @@ export default function NoteEditor({
     setSaving(true);
     setSaveError(null);
     try {
-      if (editingNoteId) {
-        const { note } = await apiFetch<{ note: ApiNote }>(`/api/songs/${song.id}/notes/${editingNoteId}`, {
-          method: "PATCH",
-          body: JSON.stringify({ startMs, endMs, note: noteText.trim() || null }),
-        });
-        const updated = notes.map((n) => (n.id === note.id ? note : n)).sort((a, b) => a.startMs - b.startMs);
-        setNotes(updated);
-        onNotesChanged(updated);
-        setEditingNoteId(null);
-      } else {
-        const { note } = await apiFetch<{ note: ApiNote }>(`/api/songs/${song.id}/notes`, {
-          method: "POST",
-          body: JSON.stringify({ startMs, endMs, note: noteText.trim() || undefined }),
-        });
-        const updated = [...notes, note].sort((a, b) => a.startMs - b.startMs);
-        setNotes(updated);
-        onNotesChanged(updated);
-      }
+      const { note } = await apiFetch<{ note: ApiNote }>(`/api/songs/${song.id}/notes`, {
+        method: "POST",
+        body: JSON.stringify({ startMs, endMs, note: noteText.trim() || undefined }),
+      });
+      const updated = [...notes, note].sort((a, b) => a.startMs - b.startMs);
+      setNotes(updated);
+      onNotesChanged(updated);
       setNoteText("");
     } catch (e) {
       setSaveError(e instanceof Error ? e.message : "Failed to save note");
@@ -83,17 +80,45 @@ export default function NoteEditor({
     }
   }
 
+  async function handleSaveUpdate() {
+    if (!editingNote) return;
+    const startMs = pendingStart ?? editingNote.startMs;
+    const endMs = pendingEnd ?? editingNote.endMs;
+    if (endMs - startMs < 250) {
+      setSaveError("That span is too short — try again.");
+      return;
+    }
+    setSaving(true);
+    setSaveError(null);
+    try {
+      const { note } = await apiFetch<{ note: ApiNote }>(`/api/songs/${song.id}/notes/${editingNote.id}`, {
+        method: "PATCH",
+        body: JSON.stringify({ startMs, endMs, note: noteText.trim() || null }),
+      });
+      const updated = notes.map((n) => (n.id === note.id ? note : n)).sort((a, b) => a.startMs - b.startMs);
+      setNotes(updated);
+      onNotesChanged(updated);
+      handleCancelEdit();
+    } catch (e) {
+      setSaveError(e instanceof Error ? e.message : "Failed to save note");
+    } finally {
+      setSaving(false);
+    }
+  }
+
   function handleEdit(n: ApiNote) {
-    setEditingNoteId(n.id);
-    setPendingStart(n.startMs);
+    setEditingNote(n);
+    setPendingStart(null);
+    setPendingEnd(null);
     setNoteText(n.note ?? "");
     setSaveError(null);
     if (deviceId) seek(n.startMs);
   }
 
   function handleCancelEdit() {
-    setEditingNoteId(null);
+    setEditingNote(null);
     setPendingStart(null);
+    setPendingEnd(null);
     setNoteText("");
     setSaveError(null);
   }
@@ -103,7 +128,7 @@ export default function NoteEditor({
     const updated = notes.filter((n) => n.id !== noteId);
     setNotes(updated);
     onNotesChanged(updated);
-    if (editingNoteId === noteId) handleCancelEdit();
+    if (editingNote?.id === noteId) handleCancelEdit();
   }
 
   return (
@@ -158,9 +183,11 @@ export default function NoteEditor({
             onDrag={setDragPosition}
           />
 
-          {editingNoteId && (
+          {editingNote && (
             <p className="text-center text-sm text-amber-400">
-              Editing note — seek to a new spot and tap Mark Start and/or Mark End, then{" "}
+              Editing note (currently {formatDuration(editingNote.startMs)} –{" "}
+              {formatDuration(editingNote.endMs)}) — seek and tap Update Start and/or Update End, then
+              tap Update to save, or{" "}
               <button onClick={handleCancelEdit} className="underline">
                 cancel
               </button>
@@ -181,20 +208,34 @@ export default function NoteEditor({
               disabled={!deviceId || saving}
               className="rounded-2xl bg-sky-600 py-6 text-lg font-bold active:scale-95 transition disabled:opacity-40"
             >
-              {editingNoteId ? "Update Start" : "Mark Start"}
+              {editingNote ? "Update Start" : "Mark Start"}
             </button>
             <button
               onClick={handleMarkEnd}
-              disabled={!deviceId || pendingStart === null || saving}
+              disabled={!deviceId || saving || (!editingNote && pendingStart === null)}
               className="rounded-2xl bg-rose-600 py-6 text-lg font-bold active:scale-95 transition disabled:opacity-40"
             >
-              {editingNoteId ? "Update End" : "Mark End"}
+              {editingNote ? "Update End" : "Mark End"}
             </button>
           </div>
-          {pendingStart !== null && (
+
+          {editingNote && (
+            <button
+              onClick={handleSaveUpdate}
+              disabled={!deviceId || saving}
+              className="w-full rounded-2xl bg-emerald-500 py-4 text-lg font-bold text-black active:scale-95 transition disabled:opacity-40"
+            >
+              {saving ? "Saving…" : "Update"}
+            </button>
+          )}
+
+          {(pendingStart !== null || pendingEnd !== null) && (
             <p className="text-center text-sm text-sky-400">
-              Start marked at {formatDuration(pendingStart)} — tap {editingNoteId ? "Update End" : "Mark End"} when
-              the action ends.
+              {pendingStart !== null && <>New start: {formatDuration(pendingStart)}. </>}
+              {pendingEnd !== null && <>New end: {formatDuration(pendingEnd)}. </>}
+              {editingNote
+                ? "Tap Update to save."
+                : "Tap Mark End when the action ends."}
             </p>
           )}
           {saveError && <p className="text-center text-sm text-red-400">{saveError}</p>}
@@ -212,7 +253,7 @@ export default function NoteEditor({
               <li
                 key={n.id}
                 className={`flex items-center justify-between rounded-xl border px-3 py-3 ${
-                  editingNoteId === n.id
+                  editingNote?.id === n.id
                     ? "border-amber-500 bg-amber-950/20"
                     : "border-neutral-800 bg-neutral-900"
                 }`}
