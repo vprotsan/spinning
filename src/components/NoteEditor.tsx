@@ -1,0 +1,179 @@
+"use client";
+
+import { useEffect, useState } from "react";
+import { usePlaybackSdk } from "@/lib/usePlaybackSdk";
+import { apiFetch } from "@/lib/api-client";
+import { formatDuration } from "@/lib/types";
+import type { ApiNote, ApiSong } from "@/lib/types";
+
+/**
+ * Mark Start / Mark End timestamp marking (Section 6). Large, thumb-reachable,
+ * hard-to-misfire buttons per Section 8 — the user's attention is on the music,
+ * not the screen, while tapping these.
+ */
+export default function NoteEditor({
+  song,
+  onClose,
+  onNotesChanged,
+}: {
+  song: ApiSong;
+  onClose: () => void;
+  onNotesChanged: (notes: ApiNote[]) => void;
+}) {
+  const { ready, deviceId, error, position, paused, currentTrackUri, playUri, togglePlay } = usePlaybackSdk();
+  const [notes, setNotes] = useState<ApiNote[]>(song.notes);
+  const [pendingStart, setPendingStart] = useState<number | null>(null);
+  const [noteText, setNoteText] = useState("");
+  const [saveError, setSaveError] = useState<string | null>(null);
+  const [saving, setSaving] = useState(false);
+
+  const isThisTrackLoaded = currentTrackUri === song.spotifyUri;
+
+  useEffect(() => {
+    if (ready && deviceId) playUri(song.spotifyUri);
+    // Only start playback once the player is ready — re-running on every
+    // position tick would restart the track.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [ready, deviceId]);
+
+  async function handleMarkStart() {
+    setPendingStart(position);
+  }
+
+  async function handleMarkEnd() {
+    if (pendingStart === null) return;
+    const startMs = Math.min(pendingStart, position);
+    const endMs = Math.max(pendingStart, position);
+    if (endMs - startMs < 250) {
+      setSaveError("That span is too short — try again.");
+      setPendingStart(null);
+      return;
+    }
+    setSaving(true);
+    setSaveError(null);
+    try {
+      const { note } = await apiFetch<{ note: ApiNote }>(`/api/songs/${song.id}/notes`, {
+        method: "POST",
+        body: JSON.stringify({ startMs, endMs, note: noteText.trim() || undefined }),
+      });
+      const updated = [...notes, note].sort((a, b) => a.startMs - b.startMs);
+      setNotes(updated);
+      onNotesChanged(updated);
+      setNoteText("");
+    } catch (e) {
+      setSaveError(e instanceof Error ? e.message : "Failed to save note");
+    } finally {
+      setPendingStart(null);
+      setSaving(false);
+    }
+  }
+
+  async function handleDelete(noteId: string) {
+    await apiFetch(`/api/songs/${song.id}/notes/${noteId}`, { method: "DELETE" });
+    const updated = notes.filter((n) => n.id !== noteId);
+    setNotes(updated);
+    onNotesChanged(updated);
+  }
+
+  return (
+    <div className="fixed inset-0 z-50 flex flex-col bg-neutral-950">
+      <div className="flex items-center justify-between border-b border-neutral-800 px-4 py-3">
+        <div>
+          <p className="text-sm text-neutral-400">Time-stamped notes</p>
+          <h2 className="text-lg font-semibold">{song.title}</h2>
+          <p className="text-sm text-neutral-400">{song.artist}</p>
+        </div>
+        <button onClick={onClose} className="rounded-full bg-neutral-800 px-4 py-2 text-sm font-medium">
+          Done
+        </button>
+      </div>
+
+      <div className="flex-1 overflow-y-auto px-4 py-4 space-y-6">
+        {error && (
+          <p className="rounded-lg border border-red-800 bg-red-950/50 px-3 py-2 text-sm text-red-300">
+            {error}
+          </p>
+        )}
+        {!error && !ready && (
+          <p className="text-sm text-neutral-400">Connecting to Spotify playback…</p>
+        )}
+        {!error && ready && !deviceId && (
+          <p className="text-sm text-neutral-400">Waiting for the player to become ready…</p>
+        )}
+
+        <div className="rounded-2xl border border-neutral-800 bg-neutral-900 p-4 space-y-4">
+          <div className="flex items-center justify-between">
+            <span className="text-2xl font-mono tabular-nums">{formatDuration(position)}</span>
+            <button
+              onClick={togglePlay}
+              disabled={!deviceId || !isThisTrackLoaded}
+              className="rounded-full bg-emerald-500 px-6 py-3 text-lg font-semibold text-black disabled:opacity-40"
+            >
+              {paused ? "▶ Play" : "⏸ Pause"}
+            </button>
+          </div>
+
+          <input
+            value={noteText}
+            onChange={(e) => setNoteText(e.target.value)}
+            placeholder="Optional note for the next span (e.g. 'big jump')"
+            className="w-full rounded-lg border border-neutral-700 bg-neutral-950 px-3 py-2 text-sm"
+          />
+
+          <div className="grid grid-cols-2 gap-3">
+            <button
+              onClick={handleMarkStart}
+              disabled={!deviceId || saving}
+              className="rounded-2xl bg-sky-600 py-6 text-lg font-bold active:scale-95 transition disabled:opacity-40"
+            >
+              Mark Start
+            </button>
+            <button
+              onClick={handleMarkEnd}
+              disabled={!deviceId || pendingStart === null || saving}
+              className="rounded-2xl bg-rose-600 py-6 text-lg font-bold active:scale-95 transition disabled:opacity-40"
+            >
+              Mark End
+            </button>
+          </div>
+          {pendingStart !== null && (
+            <p className="text-center text-sm text-sky-400">
+              Start marked at {formatDuration(pendingStart)} — tap Mark End when the action ends.
+            </p>
+          )}
+          {saveError && <p className="text-center text-sm text-red-400">{saveError}</p>}
+        </div>
+
+        <div>
+          <h3 className="mb-2 text-sm font-semibold text-neutral-400">
+            Notes on this song ({notes.length})
+          </h3>
+          {notes.length === 0 && (
+            <p className="text-sm text-neutral-500">No notes yet — mark a span above.</p>
+          )}
+          <ul className="space-y-2">
+            {notes.map((n) => (
+              <li
+                key={n.id}
+                className="flex items-center justify-between rounded-xl border border-neutral-800 bg-neutral-900 px-3 py-3"
+              >
+                <div>
+                  <p className="font-mono text-sm">
+                    {formatDuration(n.startMs)} – {formatDuration(n.endMs)}
+                  </p>
+                  {n.note && <p className="text-sm text-neutral-400">{n.note}</p>}
+                </div>
+                <button
+                  onClick={() => handleDelete(n.id)}
+                  className="rounded-full bg-neutral-800 px-3 py-2 text-xs text-neutral-300"
+                >
+                  Remove
+                </button>
+              </li>
+            ))}
+          </ul>
+        </div>
+      </div>
+    </div>
+  );
+}
