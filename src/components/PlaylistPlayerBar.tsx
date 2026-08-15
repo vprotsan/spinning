@@ -91,7 +91,7 @@ export default function PlaylistPlayerBar({ songs }: { songs: ApiPlaylistSong[] 
     : nextNote
       ? nextNote.startMs - position
       : effectiveDuration - position;
-  const countdownLabel = activeNote ? "note ends" : nextNote ? "next note" : "song ends";
+  const countdownLabel = activeNote ? "" : nextNote ? "next note" : "song ends";
 
   const remainingInPlaylistMs =
     Math.max(0, effectiveDuration - position) +
@@ -126,21 +126,23 @@ export default function PlaylistPlayerBar({ songs }: { songs: ApiPlaylistSong[] 
         />
 
         <div className="mb-2 flex items-center justify-between text-xs text-neutral-500">
-          <span className="font-mono">
+          <span className="font-mono text-xl">
             {formatDuration(position)} / {formatDuration(effectiveDuration)}
           </span>
-          <span className="font-mono">-{formatDuration(remainingInPlaylistMs)} left in playlist</span>
+          <span className="font-mono text-xl">-{formatDuration(remainingInPlaylistMs)}
+          </span>
         </div>
 
         {activeNote ? (
-          <div className="mb-3 rounded-lg border border-amber-600/50 bg-amber-950/30 px-4 py-3">
-            <p className="truncate text-3xl font-bold text-amber-300">{activeNote.note || "Note"}</p>
-            <p className="text-lg text-amber-500/80">
+          <div className="flex items-center justify-between mb-3 rounded-lg border border-amber-600/50 bg-amber-950/30 px-4 py-3">
+            <span className="truncate text-3xl font-bold text-amber-300">{activeNote.note || "Note"}</span>
+            
+            <span className="text-lg text-amber-500/80">
               {formatDuration(Math.max(0, countdownMs))} left · {countdownLabel}
-            </p>
+            </span>
           </div>
         ) : (
-          <p className="mb-3 text-center text-xs text-neutral-500">
+          <p className="mb-3 text-center text-3xl text-neutral-500">
             {formatDuration(Math.max(0, countdownMs))} · {countdownLabel}
           </p>
         )}
