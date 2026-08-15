@@ -72,8 +72,13 @@ function normalizeTrack(t: SpotifyTrack): NormalizedTrack {
   };
 }
 
-export async function searchTracks(userId: string, query: string, limit = 20) {
-  const params = new URLSearchParams({ q: query, type: "track", limit: String(limit) });
+export async function searchTracks(userId: string, query: string) {
+  // Strip characters that trigger Spotify's 400 "Invalid html" validation (can happen
+  // with iOS autocomplete or smart-quote substitution).
+  const q = query.replace(/[<>&"']/g, " ").replace(/\s+/g, " ").trim();
+  // Omit `limit` — an explicit value (even a modest one) can trigger Spotify's
+  // "Invalid limit" validation depending on the app/account; let Spotify use its own default.
+  const params = new URLSearchParams({ q, type: "track" });
   const res = await spotifyFetch(userId, `/search?${params.toString()}`);
   if (!res.ok) throw new Error(`Spotify search failed: ${res.status} ${await res.text()}`);
   const data = await res.json();

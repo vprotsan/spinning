@@ -15,6 +15,7 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ tracks });
   } catch (err) {
     console.error("Spotify search failed", err);
-    return NextResponse.json({ error: "Spotify search failed" }, { status: 502 });
+    const message = err instanceof Error ? err.message : "Spotify search failed";
+    return NextResponse.json({ error: message }, { status: 502 });
   }
 }
