@@ -137,7 +137,7 @@ export default function PlaylistPlayerBar({ songs }: { songs: ApiPlaylistSong[] 
           <div className="flex items-center justify-between mb-3 rounded-lg border border-amber-600/50 bg-amber-950/30 px-4 py-3">
             <span className="truncate text-3xl font-bold text-amber-300">{activeNote.note || "Note"}</span>
             
-            <span className="text-lg text-amber-500/80">
+            <span className="text-2xl text-amber-500/80">
               {formatDuration(Math.max(0, countdownMs))} left · {countdownLabel}
             </span>
           </div>
