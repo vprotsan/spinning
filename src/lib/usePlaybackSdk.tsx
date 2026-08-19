@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { createContext, useContext, useEffect, useRef, useState, type ReactNode } from "react";
 
 // Minimal shape of the bits of the Spotify Web Playback SDK we use.
 type SpotifyPlayerState = {
@@ -86,12 +86,32 @@ async function waitForDevice(deviceId: string, token: string): Promise<boolean> 
   return false;
 }
 
+type PlaybackSdk = {
+  ready: boolean;
+  deviceId: string | null;
+  error: string | null;
+  position: number;
+  duration: number;
+  paused: boolean;
+  currentTrackUri: string | null;
+  playUri: (uri: string) => Promise<void>;
+  togglePlay: () => Promise<void>;
+  seek: (positionMs: number) => Promise<void>;
+};
+
+const PlaybackSdkContext = createContext<PlaybackSdk | null>(null);
+
 /**
- * Connects to the Spotify Web Playback SDK (Premium required — Section 3.2 /
- * 5.2) and exposes enough control to play a track and read the live playhead
- * for Mark Start / Mark End.
+ * Connects a single, shared Spotify Web Playback SDK player (Premium
+ * required — Section 3.2 / 5.2) for the whole app and exposes it via
+ * context. Every consumer (playlist bar, search preview, note editor, …)
+ * must share this one instance — Spotify only grants one device slot per
+ * SDK connection, and two independent `Spotify.Player`s racing to connect()
+ * in the same tab (e.g. the note editor opened on top of a page that's
+ * already running the playlist player) fight over that slot and neither
+ * reliably reaches "ready" with a device_id.
  */
-export function usePlaybackSdk() {
+export function PlaybackSdkProvider({ children }: { children: ReactNode }) {
   const playerRef = useRef<SpotifyPlayerInstance | null>(null);
   const [deviceId, setDeviceId] = useState<string | null>(null);
   const [ready, setReady] = useState(false);
@@ -166,13 +186,12 @@ export function usePlaybackSdk() {
   }, []);
 
   // If we connect but never get a device_id, the "Waiting for the player to
-  // become ready…" message would otherwise hang forever with no explanation
-  // (a known failure mode on some iOS browsers). Surface it after a timeout.
+  // become ready…" message would otherwise hang forever with no explanation.
   useEffect(() => {
     if (!ready || deviceId || error) return;
     const timeout = setTimeout(() => {
       setError(
-        "Spotify connected but never registered a playback device on this browser — this is a known issue on some iOS browsers (Safari and Chrome both use the same underlying engine on iOS, so both are typically affected the same way). Try reloading, or test on a desktop browser in the meantime."
+        "Spotify connected but never registered a playback device on this browser. Try reloading the page."
       );
     }, 12000);
     return () => clearTimeout(timeout);
@@ -235,5 +254,26 @@ export function usePlaybackSdk() {
     setPosition(positionMs);
   }
 
-  return { ready, deviceId, error, position, duration, paused, currentTrackUri, playUri, togglePlay, seek };
+  const value: PlaybackSdk = {
+    ready,
+    deviceId,
+    error,
+    position,
+    duration,
+    paused,
+    currentTrackUri,
+    playUri,
+    togglePlay,
+    seek,
+  };
+
+  return <PlaybackSdkContext.Provider value={value}>{children}</PlaybackSdkContext.Provider>;
+}
+
+export function usePlaybackSdk(): PlaybackSdk {
+  const ctx = useContext(PlaybackSdkContext);
+  if (!ctx) {
+    throw new Error("usePlaybackSdk() must be used within a <PlaybackSdkProvider>");
+  }
+  return ctx;
 }

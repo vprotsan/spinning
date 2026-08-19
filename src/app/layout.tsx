@@ -2,6 +2,7 @@ import type { Metadata, Viewport } from "next";
 import "./globals.css";
 import BottomNav from "@/components/BottomNav";
 import { getSession } from "@/lib/session";
+import { PlaybackSdkProvider } from "@/lib/usePlaybackSdk";
 
 export const metadata: Metadata = {
   title: "Cycling Playlist Designer",
@@ -21,8 +22,14 @@ export default async function RootLayout({ children }: LayoutProps<"/">) {
   return (
     <html lang="en" className="h-full antialiased">
       <body className="min-h-full flex flex-col bg-neutral-950 text-neutral-100">
-        <main className="flex-1 pb-20">{children}</main>
-        {session && <BottomNav />}
+        {session ? (
+          <PlaybackSdkProvider>
+            <main className="flex-1 pb-20">{children}</main>
+            <BottomNav />
+          </PlaybackSdkProvider>
+        ) : (
+          <main className="flex-1 pb-20">{children}</main>
+        )}
       </body>
     </html>
   );
