@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { usePlaybackSdk } from "@/lib/usePlaybackSdk";
 import Scrubber from "@/components/Scrubber";
 import { apiFetch } from "@/lib/api-client";
@@ -34,12 +34,14 @@ export default function NoteEditor({
 
   const isThisTrackLoaded = currentTrackUri === song.spotifyUri;
 
-  useEffect(() => {
-    if (ready && deviceId) playUri(song.spotifyUri);
-    // Only start playback once the player is ready — re-running on every
-    // position tick would restart the track.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [ready, deviceId]);
+  // Loading the track has to happen from a direct tap, not an effect — iOS
+  // Safari only allows the SDK to produce audio when playback is triggered by
+  // a synchronous user gesture (see activateElement() in usePlaybackSdk).
+  async function handlePlayToggle() {
+    if (!deviceId) return;
+    if (!isThisTrackLoaded) await playUri(song.spotifyUri);
+    else await togglePlay();
+  }
 
   function handleMarkStart() {
     setPendingStart(position);
@@ -156,6 +158,9 @@ export default function NoteEditor({
         {!error && ready && !deviceId && (
           <p className="text-sm text-neutral-400">Waiting for the player to become ready…</p>
         )}
+        {!error && deviceId && !isThisTrackLoaded && (
+          <p className="text-sm text-neutral-400">Tap ▶ Load &amp; Play below to start the track.</p>
+        )}
 
         <div className="rounded-2xl border border-neutral-800 bg-neutral-900 p-4 space-y-4">
           <div className="flex items-center justify-between">
@@ -164,11 +169,11 @@ export default function NoteEditor({
               <span className="text-base text-neutral-500"> / {formatDuration(duration)}</span>
             </span>
             <button
-              onClick={togglePlay}
-              disabled={!deviceId || !isThisTrackLoaded}
+              onClick={handlePlayToggle}
+              disabled={!deviceId}
               className="rounded-full bg-emerald-500 px-6 py-3 text-lg font-semibold text-black disabled:opacity-40"
             >
-              {paused ? "▶ Play" : "⏸ Pause"}
+              {!isThisTrackLoaded ? "▶ Load & Play" : paused ? "▶ Play" : "⏸ Pause"}
             </button>
           </div>
 
@@ -205,14 +210,14 @@ export default function NoteEditor({
           <div className="grid grid-cols-2 gap-3">
             <button
               onClick={handleMarkStart}
-              disabled={!deviceId || saving}
+              disabled={!deviceId || !isThisTrackLoaded || saving}
               className="rounded-2xl bg-sky-600 py-6 text-lg font-bold active:scale-95 transition disabled:opacity-40"
             >
               {editingNote ? "Update Start" : "Mark Start"}
             </button>
             <button
               onClick={handleMarkEnd}
-              disabled={!deviceId || saving || (!editingNote && pendingStart === null)}
+              disabled={!deviceId || !isThisTrackLoaded || saving || (!editingNote && pendingStart === null)}
               className="rounded-2xl bg-rose-600 py-6 text-lg font-bold active:scale-95 transition disabled:opacity-40"
             >
               {editingNote ? "Update End" : "Mark End"}

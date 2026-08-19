@@ -19,6 +19,7 @@ type SpotifyPlayerInstance = {
   pause: () => Promise<void>;
   resume: () => Promise<void>;
   seek: (positionMs: number) => Promise<void>;
+  activateElement: () => Promise<void>;
 };
 
 declare global {
@@ -166,6 +167,10 @@ export function usePlaybackSdk() {
   async function playUri(uri: string) {
     if (!deviceId) return;
     setError(null);
+    // Mobile Safari only allows the SDK to keep playing audio transferred from
+    // Spotify's servers (i.e. our REST play call below) if activateElement()
+    // was called synchronously within this same user-gesture call chain first.
+    await playerRef.current?.activateElement().catch(() => {});
     const token = await fetchPlayerToken();
     const res = await fetch(`https://api.spotify.com/v1/me/player/play?device_id=${deviceId}`, {
       method: "PUT",
