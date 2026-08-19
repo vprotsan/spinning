@@ -95,7 +95,11 @@ export function usePlaybackSdk() {
   const playerRef = useRef<SpotifyPlayerInstance | null>(null);
   const [deviceId, setDeviceId] = useState<string | null>(null);
   const [ready, setReady] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(() =>
+    typeof window !== "undefined" && !window.isSecureContext
+      ? "This page isn't loaded over HTTPS, so Spotify can't start playback here (this is required by every browser, iOS included — not something the app can override). If you're testing on your phone against a local dev server via its LAN IP, that's why nothing happens: deploy the app (e.g. to Vercel) or use an HTTPS tunnel and open that URL on your phone instead."
+      : null
+  );
   const [position, setPosition] = useState(0);
   const [duration, setDuration] = useState(0);
   const [paused, setPaused] = useState(true);
@@ -103,6 +107,15 @@ export function usePlaybackSdk() {
 
   useEffect(() => {
     let cancelled = false;
+
+    // The SDK's DRM/EME handshake silently refuses to initialize outside a
+    // secure context — it never fires "ready" and never surfaces an error, it
+    // just hangs forever. Only literal https:// or http://localhost/127.0.0.1
+    // count; a LAN IP like http://192.168.x.x:3000 (typical for testing a dev
+    // server from a phone) does not, on any browser, iOS included. (Handled
+    // via the error state's lazy initializer, above, to avoid a setState call
+    // directly in the effect body.)
+    if (!window.isSecureContext) return;
 
     loadSdkScript()
       .then(() => {
@@ -151,6 +164,19 @@ export function usePlaybackSdk() {
       playerRef.current?.disconnect();
     };
   }, []);
+
+  // If we connect but never get a device_id, the "Waiting for the player to
+  // become ready…" message would otherwise hang forever with no explanation
+  // (a known failure mode on some iOS browsers). Surface it after a timeout.
+  useEffect(() => {
+    if (!ready || deviceId || error) return;
+    const timeout = setTimeout(() => {
+      setError(
+        "Spotify connected but never registered a playback device on this browser — this is a known issue on some iOS browsers (Safari and Chrome both use the same underlying engine on iOS, so both are typically affected the same way). Try reloading, or test on a desktop browser in the meantime."
+      );
+    }, 12000);
+    return () => clearTimeout(timeout);
+  }, [ready, deviceId, error]);
 
   // Poll position while playing so Mark Start/End reads a live-ish value
   // (player_state_changed only fires on transitions, not every tick).
