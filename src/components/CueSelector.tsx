@@ -6,8 +6,9 @@ const CUE_COLORS: Record<Cue, string> = {
   Jumps: "bg-orange-500 border-orange-500",
   Climbs: "bg-rose-500 border-rose-500",
   Sprints: "bg-red-600 border-red-600",
-  Choreo: "bg-purple-500 border-purple-500",
+  "Standing Choreo": "bg-purple-500 border-purple-500",
   Flat: "bg-sky-500 border-sky-500",
+  Jog: "bg-emerald-500 border-emerald-500",
 };
 
 export function CueBadge({ cue }: { cue: Cue | null }) {

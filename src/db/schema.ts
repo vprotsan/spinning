@@ -14,8 +14,9 @@ export const cueEnum = pgEnum("cue", [
   "Jumps",
   "Climbs",
   "Sprints",
-  "Choreo",
+  "Standing Choreo",
   "Flat",
+  "Jog",
 ]);
 
 // One row per Spotify account. Access/refresh tokens live server-side only.
