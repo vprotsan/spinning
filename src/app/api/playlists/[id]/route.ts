@@ -35,7 +35,7 @@ export async function GET(_request: NextRequest, ctx: RouteContext<"/api/playlis
 
   const songIds = rows.map((r) => r.song.id);
   const noteRows = songIds.length
-    ? await db.select().from(notes).where(inArray(notes.songId, songIds))
+    ? await db.select().from(notes).where(inArray(notes.songId, songIds)).orderBy(asc(notes.startMs))
     : [];
   const notesBySong = new Map<string, typeof noteRows>();
   for (const n of noteRows) {
