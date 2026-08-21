@@ -237,6 +237,7 @@ export default function PlaylistDetailClient({ playlistId }: { playlistId: strin
           onClose={() => setOpenSong(null)}
           onSongUpdated={handleSongUpdated}
           onRemovedFromMySongs={handleRemovedFromMySongs}
+          showAddToPlaylist={false}
         />
       )}
 

@@ -17,11 +17,14 @@ export default function SongDetailSheet({
   onClose,
   onSongUpdated,
   onRemovedFromMySongs,
+  showAddToPlaylist = true,
 }: {
   song: ApiSong;
   onClose: () => void;
   onSongUpdated: (song: ApiSong) => void;
   onRemovedFromMySongs?: (songId: string) => void;
+  /** Hidden when viewing a song from within a playlist — it's already in this playlist. */
+  showAddToPlaylist?: boolean;
 }) {
   const [current, setCurrent] = useState(song);
   const [editingNotes, setEditingNotes] = useState(false);
@@ -32,10 +35,11 @@ export default function SongDetailSheet({
   const [confirmRemove, setConfirmRemove] = useState(false);
 
   useEffect(() => {
+    if (!showAddToPlaylist) return;
     apiFetch<{ playlists: ApiPlaylistSummary[] }>("/api/playlists")
       .then((d) => setPlaylists(d.playlists))
       .catch(() => setPlaylists([]));
-  }, []);
+  }, [showAddToPlaylist]);
 
   async function handleCueChange(cue: Cue | null) {
     setBusy(true);
@@ -135,46 +139,48 @@ export default function SongDetailSheet({
           </button>
         </section>
 
-        <section className="space-y-2">
-          <h3 className="text-sm font-semibold text-neutral-400">Add to playlist</h3>
-          <div className="space-y-2">
-            {(playlists ?? []).map((p) => {
-              const added = addedTo.has(p.id);
-              return (
-                <button
-                  key={p.id}
-                  onClick={() => !added && handleAddToPlaylist(p.id)}
-                  disabled={added}
-                  className={`flex w-full items-center justify-between rounded-xl border px-3 py-3 text-sm ${
-                    added
-                      ? "border-emerald-700 bg-emerald-950/40 text-emerald-400"
-                      : "border-neutral-800 bg-neutral-900"
-                  }`}
-                >
-                  <span>{p.name}</span>
-                  <span>{added ? "Added ✓" : "Add"}</span>
-                </button>
-              );
-            })}
-            {playlists?.length === 0 && (
-              <p className="text-sm text-neutral-500">No playlists yet — create one below.</p>
-            )}
-          </div>
-          <div className="flex gap-2 pt-1">
-            <input
-              value={newPlaylistName}
-              onChange={(e) => setNewPlaylistName(e.target.value)}
-              placeholder="New playlist name"
-              className="flex-1 rounded-lg border border-neutral-700 bg-neutral-900 px-3 py-2 text-sm"
-            />
-            <button
-              onClick={handleCreatePlaylistAndAdd}
-              className="rounded-lg bg-neutral-700 px-4 py-2 text-sm font-medium"
-            >
-              Create & Add
-            </button>
-          </div>
-        </section>
+        {showAddToPlaylist && (
+          <section className="space-y-2">
+            <h3 className="text-sm font-semibold text-neutral-400">Add to playlist</h3>
+            <div className="space-y-2">
+              {(playlists ?? []).map((p) => {
+                const added = addedTo.has(p.id);
+                return (
+                  <button
+                    key={p.id}
+                    onClick={() => !added && handleAddToPlaylist(p.id)}
+                    disabled={added}
+                    className={`flex w-full items-center justify-between rounded-xl border px-3 py-3 text-sm ${
+                      added
+                        ? "border-emerald-700 bg-emerald-950/40 text-emerald-400"
+                        : "border-neutral-800 bg-neutral-900"
+                    }`}
+                  >
+                    <span>{p.name}</span>
+                    <span>{added ? "Added ✓" : "Add"}</span>
+                  </button>
+                );
+              })}
+              {playlists?.length === 0 && (
+                <p className="text-sm text-neutral-500">No playlists yet — create one below.</p>
+              )}
+            </div>
+            <div className="flex gap-2 pt-1">
+              <input
+                value={newPlaylistName}
+                onChange={(e) => setNewPlaylistName(e.target.value)}
+                placeholder="New playlist name"
+                className="flex-1 rounded-lg border border-neutral-700 bg-neutral-900 px-3 py-2 text-sm"
+              />
+              <button
+                onClick={handleCreatePlaylistAndAdd}
+                className="rounded-lg bg-neutral-700 px-4 py-2 text-sm font-medium"
+              >
+                Create & Add
+              </button>
+            </div>
+          </section>
+        )}
 
         {current.inMySongs && (
           <section className="space-y-2 border-t border-neutral-800 pt-4">

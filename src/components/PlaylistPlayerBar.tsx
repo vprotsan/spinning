@@ -91,7 +91,11 @@ export default function PlaylistPlayerBar({ songs }: { songs: ApiPlaylistSong[] 
     : nextNote
       ? nextNote.startMs - position
       : effectiveDuration - position;
-  const countdownLabel = activeNote ? "" : nextNote ? "next note" : "song ends";
+  const countdownLabel = activeNote
+    ? ""
+    : nextNote
+      ? `next${nextNote.note ? `: ${nextNote.note}` : ""}`
+      : "song ends";
 
   const remainingInPlaylistMs =
     Math.max(0, effectiveDuration - position) +
