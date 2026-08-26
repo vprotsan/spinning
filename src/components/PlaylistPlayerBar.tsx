@@ -43,6 +43,7 @@ export default function PlaylistPlayerBar({ songs }: { songs: ApiPlaylistSong[] 
   // Auto-advance: was playing → now paused at position 0 = track ended. The 3s
   // guard avoids false-positives when a play call fails to actually start
   // (device errors etc.), which otherwise fires an instant paused-at-0 event.
+  // Looping: after the last track, restart from the first.
   useEffect(() => {
     const wasPaused = wasPausedRef.current;
     wasPausedRef.current = paused;
@@ -52,9 +53,7 @@ export default function PlaylistPlayerBar({ songs }: { songs: ApiPlaylistSong[] 
       if (next < songsRef.current.length) {
         playAtIndex(next);
       } else {
-        hasStartedRef.current = false;
-        setHasStarted(false);
-        setCurrentIndex(0);
+        playAtIndex(0);
       }
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
