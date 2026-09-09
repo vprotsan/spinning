@@ -30,6 +30,7 @@ export default function AddSongsToPlaylistSheet({
   const [libraryOffset, setLibraryOffset] = useState(0);
   const [libraryHasMore, setLibraryHasMore] = useState(true);
   const [spotifyPlaylists, setSpotifyPlaylists] = useState<SpotifyPlaylistResult[] | null>(null);
+  const [playlistFilter, setPlaylistFilter] = useState("");
   const [activePlaylist, setActivePlaylist] = useState<SpotifyPlaylistResult | null>(null);
   const [playlistTracks, setPlaylistTracks] = useState<SpotifyTrackResult[]>([]);
   const [playlistOffset, setPlaylistOffset] = useState(0);
@@ -172,6 +173,10 @@ export default function AddSongsToPlaylistSheet({
   const trackList =
     tab === "search" ? results : tab === "library" ? libraryTracks : tab === "playlists" ? playlistTracks : [];
 
+  const filteredPlaylists = (spotifyPlaylists ?? []).filter((p) =>
+    p.name.toLowerCase().includes(playlistFilter.trim().toLowerCase())
+  );
+
   return (
     <div className="fixed inset-0 z-50 flex flex-col bg-neutral-950">
       <div className="flex items-center justify-between border-b border-neutral-800 px-4 py-3">
@@ -279,13 +284,24 @@ export default function AddSongsToPlaylistSheet({
 
         {tab === "playlists" && !activePlaylist ? (
           <>
+            {spotifyPlaylists && spotifyPlaylists.length > 0 && (
+              <input
+                value={playlistFilter}
+                onChange={(e) => setPlaylistFilter(e.target.value)}
+                placeholder="Filter your playlists by name"
+                className="mb-2 w-full rounded-lg border border-neutral-700 bg-neutral-900 px-3 py-2 text-sm"
+              />
+            )}
             {loading && spotifyPlaylists?.length === 0 && (
               <p className="text-sm text-neutral-500">Loading…</p>
             )}
             {spotifyPlaylists?.length === 0 && !loading && (
               <p className="text-sm text-neutral-500">No playlists found.</p>
             )}
-            {spotifyPlaylists?.map((playlist) => (
+            {spotifyPlaylists && spotifyPlaylists.length > 0 && filteredPlaylists.length === 0 && (
+              <p className="text-sm text-neutral-500">No playlists match “{playlistFilter}”.</p>
+            )}
+            {filteredPlaylists.map((playlist) => (
               <div
                 key={playlist.id}
                 onClick={() => openPlaylist(playlist)}
