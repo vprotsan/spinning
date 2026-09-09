@@ -7,7 +7,7 @@ export default async function HomePage({
   searchParams: Promise<{ error?: string }>;
 }) {
   const session = await getSession();
-  if (session) redirect("/my-songs");
+  if (session) redirect("/playlists");
 
   const { error } = await searchParams;
 

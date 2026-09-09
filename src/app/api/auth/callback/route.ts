@@ -61,7 +61,7 @@ export async function GET(request: NextRequest) {
 
     await createSession({ userId: profile.id });
 
-    return NextResponse.redirect(`${appUrl}/my-songs`);
+    return NextResponse.redirect(`${appUrl}/playlists`);
   } catch (err) {
     console.error("Spotify OAuth callback failed", err);
     return NextResponse.redirect(`${appUrl}/?error=auth_failed`);
