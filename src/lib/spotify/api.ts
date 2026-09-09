@@ -117,28 +117,42 @@ export type NormalizedSpotifyPlaylist = {
   externalUrl: string | null;
 };
 
-/** Lists the current user's own Spotify playlists (owned or followed). */
-export async function getUserPlaylists(userId: string) {
-  const res = await spotifyFetch(userId, `/me/playlists?limit=50`);
-  if (!res.ok) throw new Error(`Spotify playlists failed: ${res.status} ${await res.text()}`);
-  const data = await res.json();
-  const items = (data.items ?? []) as Array<{
-    id: string;
-    name: string;
-    owner: { display_name: string };
-    // Renamed from `tracks` in Spotify's Feb 2026 Web API migration.
-    items: { total: number };
-    images: { url: string }[];
-    external_urls?: { spotify?: string };
-  }>;
-  return items.map((p) => ({
+type RawSpotifyPlaylist = {
+  id: string;
+  name: string;
+  owner: { display_name: string };
+  // Renamed from `tracks` in Spotify's Feb 2026 Web API migration.
+  items: { total: number };
+  images: { url: string }[];
+  external_urls?: { spotify?: string };
+};
+
+function normalizePlaylist(p: RawSpotifyPlaylist): NormalizedSpotifyPlaylist {
+  return {
     id: p.id,
     name: p.name,
     ownerName: p.owner.display_name,
     trackCount: p.items.total,
     imageUrl: p.images?.[0]?.url ?? null,
     externalUrl: p.external_urls?.spotify ?? null,
-  })) as NormalizedSpotifyPlaylist[];
+  };
+}
+
+/** Lists ALL of the current user's own Spotify playlists (owned or followed), paging past Spotify's 50-per-request cap. */
+export async function getUserPlaylists(userId: string) {
+  const all: NormalizedSpotifyPlaylist[] = [];
+  let offset = 0;
+  let hasMore = true;
+  while (hasMore) {
+    const res = await spotifyFetch(userId, `/me/playlists?limit=50&offset=${offset}`);
+    if (!res.ok) throw new Error(`Spotify playlists failed: ${res.status} ${await res.text()}`);
+    const data = await res.json();
+    const items = (data.items ?? []) as RawSpotifyPlaylist[];
+    all.push(...items.map(normalizePlaylist));
+    offset += items.length;
+    hasMore = Boolean(data.next) && items.length > 0;
+  }
+  return all;
 }
 
 /** Lists the tracks (excluding podcast episodes) in one of the user's own Spotify playlists. */
