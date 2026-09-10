@@ -197,17 +197,27 @@ export function PlaybackSdkProvider({ children }: { children: ReactNode }) {
     return () => clearTimeout(timeout);
   }, [ready, deviceId, error]);
 
-  // Poll position while playing so Mark Start/End reads a live-ish value
-  // (player_state_changed only fires on transitions, not every tick).
+  // Poll live state whenever we have a device — this both gives Mark
+  // Start/End a live-ish position while playing (player_state_changed only
+  // fires on transitions, not every tick) and, importantly, is the fallback
+  // for when the SDK misses that first transition event entirely. That drop
+  // happens often enough right after transferPlayback (called just before
+  // every playUri) that relying on the event alone leaves currentTrackUri
+  // stuck at null — and audibly-playing music with Mark Start/End stuck
+  // disabled forever, since nothing would otherwise ever correct it.
   useEffect(() => {
-    if (paused) return;
+    if (!deviceId) return;
     const interval = setInterval(() => {
       playerRef.current?.getCurrentState().then((state) => {
-        if (state) setPosition(state.position);
+        if (!state) return;
+        setPosition(state.position);
+        setDuration(state.duration);
+        setPaused(state.paused);
+        setCurrentTrackUri(state.track_window.current_track.uri);
       });
     }, 250);
     return () => clearInterval(interval);
-  }, [paused]);
+  }, [deviceId]);
 
   async function playUri(uri: string) {
     if (!deviceId) return;
