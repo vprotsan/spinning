@@ -137,12 +137,19 @@ export default function PlaylistPlayerBar({ songs }: { songs: ApiPlaylistSong[] 
         </div>
 
         {activeNote ? (
-          <div className="flex items-center justify-between mb-3 rounded-lg border border-amber-600/50 bg-amber-950/30 px-4 py-3">
-            <span className="truncate text-3xl font-bold text-amber-300">{activeNote.note || "Note"}</span>
-            
-            <span className="text-2xl text-amber-500/80">
-              {formatDuration(Math.max(0, countdownMs))} left · {countdownLabel}
-            </span>
+          <div className="mb-3">
+            <div className="flex items-center justify-between rounded-lg border border-amber-600/50 bg-amber-950/30 px-4 py-3">
+              <span className="truncate text-3xl font-bold text-amber-300">{activeNote.note || "Note"}</span>
+
+              <span className="text-2xl text-amber-500/80">
+                {formatDuration(Math.max(0, countdownMs))} left · {countdownLabel}
+              </span>
+            </div>
+            {nextNote && (
+              <p className="mt-1 truncate px-1 text-sm text-neutral-500">
+                Next: {nextNote.note || "Note"} in {formatDuration(Math.max(0, nextNote.startMs - position))}
+              </p>
+            )}
           </div>
         ) : (
           <p className="mb-3 text-center text-3xl text-neutral-500">
