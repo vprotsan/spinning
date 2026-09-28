@@ -146,8 +146,8 @@ export default function PlaylistPlayerBar({ songs }: { songs: ApiPlaylistSong[] 
               </span>
             </div>
             {nextNote && (
-              <p className="mt-1 font-bold truncate px-1 text-lg text-neutral-500">
-                Next: {nextNote.note || "Note"} in {formatDuration(Math.max(0, nextNote.startMs - position))}
+              <p className="mt-1 font-bold px-1 text-lg text-neutral-800">
+                Next: {nextNote.note || "Note"}
               </p>
             )}
           </div>
