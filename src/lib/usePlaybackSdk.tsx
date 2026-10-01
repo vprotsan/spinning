@@ -7,8 +7,26 @@ type SpotifyPlayerState = {
   paused: boolean;
   position: number;
   duration: number;
-  track_window: { current_track: { uri: string; name: string } };
+  track_window: {
+    current_track: {
+      uri: string;
+      name: string;
+      // Set when Spotify relinked the requested track to a market-playable
+      // equivalent with a different URI (uri/id are null otherwise).
+      linked_from?: { uri: string | null; id: string | null };
+    };
+  };
 };
+
+/**
+ * The URI the app asked to play. With track relinking, `current_track.uri` is
+ * the substitute Spotify actually plays, so comparing it against the song's
+ * stored URI fails for relinked tracks — the original lives in `linked_from`.
+ */
+function requestedTrackUri(state: SpotifyPlayerState): string {
+  const track = state.track_window.current_track;
+  return track.linked_from?.uri ?? track.uri;
+}
 
 type SpotifyPlayerInstance = {
   connect: () => Promise<boolean>;
@@ -58,6 +76,16 @@ async function fetchPlayerToken(): Promise<string> {
   if (!res.ok) throw new Error("Could not get a Spotify playback token — Premium is required.");
   const data = await res.json();
   return data.accessToken;
+}
+
+/** "Could not start playback" plus Spotify's own reason, when it gives one. */
+async function playbackError(res: Response): Promise<string> {
+  let reason = "";
+  try {
+    const body = await res.json();
+    reason = body?.error?.message ?? body?.error?.reason ?? "";
+  } catch {}
+  return `Could not start playback (Spotify ${res.status}${reason ? `: ${reason}` : ""})`;
 }
 
 async function transferPlayback(deviceId: string, token: string): Promise<void> {
@@ -125,6 +153,28 @@ export function PlaybackSdkProvider({ children }: { children: ReactNode }) {
   const [paused, setPaused] = useState(true);
   const [currentTrackUri, setCurrentTrackUri] = useState<string | null>(null);
 
+  // The URI we last asked to play, and the URI Spotify actually reported for
+  // it. These can differ even without `linked_from` — e.g. Moby "Honey" exists
+  // twice on the same album, and playing one ID reports the other. Without
+  // this alias the requested song never looks loaded, so Pause re-plays it and
+  // Mark Start/End stay disabled.
+  const playRequestRef = useRef<{ requested: string; before: string | null; actual: string | null } | null>(null);
+  const lastActualUriRef = useRef<string | null>(null);
+
+  function resolveTrackUri(state: SpotifyPlayerState): string {
+    const actual = requestedTrackUri(state);
+    lastActualUriRef.current = actual;
+    const req = playRequestRef.current;
+    if (!req) return actual;
+    // The first track that differs from what was playing before the request
+    // is the one Spotify started for it (stale states may still report the
+    // previous track for a moment right after the play call).
+    if (req.actual === null && (actual === req.requested || actual !== req.before)) {
+      req.actual = actual;
+    }
+    return actual === req.actual ? req.requested : actual;
+  }
+
   useEffect(() => {
     let cancelled = false;
 
@@ -169,7 +219,7 @@ export function PlaybackSdkProvider({ children }: { children: ReactNode }) {
           setPosition(state.position);
           setDuration(state.duration);
           setPaused(state.paused);
-          setCurrentTrackUri(state.track_window.current_track.uri);
+          setCurrentTrackUri(resolveTrackUri(state));
         });
 
         player.connect().then((success: boolean) => {
@@ -213,7 +263,7 @@ export function PlaybackSdkProvider({ children }: { children: ReactNode }) {
         setPosition(state.position);
         setDuration(state.duration);
         setPaused(state.paused);
-        setCurrentTrackUri(state.track_window.current_track.uri);
+        setCurrentTrackUri(resolveTrackUri(state));
       });
     }, 250);
     return () => clearInterval(interval);
@@ -222,6 +272,12 @@ export function PlaybackSdkProvider({ children }: { children: ReactNode }) {
   async function playUri(uri: string) {
     if (!deviceId) return;
     setError(null);
+    const prev = playRequestRef.current;
+    // Re-playing the same song keeps the alias we already learned for it.
+    playRequestRef.current =
+      prev?.requested === uri && prev.actual
+        ? prev
+        : { requested: uri, before: lastActualUriRef.current, actual: null };
     // Mobile Safari only allows the SDK to keep playing audio transferred from
     // Spotify's servers (i.e. our REST play call below) if activateElement()
     // was called synchronously within this same user-gesture call chain first.
@@ -239,7 +295,7 @@ export function PlaybackSdkProvider({ children }: { children: ReactNode }) {
       await transferPlayback(deviceId, token);
       const found = await waitForDevice(deviceId, token);
       if (!found) {
-        setError("Could not start playback");
+        setError("Could not start playback (this browser's player never showed up in your Spotify devices)");
         return;
       }
       const retryRes = await fetch(`https://api.spotify.com/v1/me/player/play?device_id=${deviceId}`, {
@@ -247,11 +303,11 @@ export function PlaybackSdkProvider({ children }: { children: ReactNode }) {
         headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
         body: JSON.stringify({ uris: [uri] }),
       });
-      if (!retryRes.ok && retryRes.status !== 204) setError("Could not start playback");
+      if (!retryRes.ok && retryRes.status !== 204) setError(await playbackError(retryRes));
       return;
     }
 
-    setError("Could not start playback");
+    setError(await playbackError(res));
   }
 
   async function togglePlay() {
